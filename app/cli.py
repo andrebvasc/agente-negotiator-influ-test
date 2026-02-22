@@ -34,6 +34,7 @@ def chat(
         result = orchestrator.start_or_resume_conversation(influencer, new=new)
         thread_id = result["thread_id"]
         conv = result["conversation"]
+        influencer_obj = result["influencer"]
 
         if result["resumed"]:
             console.print("[dim]Conversa anterior retomada.[/dim]")
@@ -61,7 +62,8 @@ def chat(
 
             with console.status("[bold yellow]Pensando...[/bold yellow]"):
                 response = orchestrator.process_message(
-                    thread_id, conv.id, user_input
+                    thread_id, conv.id, user_input,
+                    influencer_id=influencer_obj.id,
                 )
 
             console.print(

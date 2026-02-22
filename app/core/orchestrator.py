@@ -12,10 +12,12 @@ from app.core.registry import registry
 from app.core.store import (
     create_conversation,
     get_active_conversation,
+    get_conversation_messages,
     get_or_create_agent,
     get_or_create_influencer,
     save_message,
     update_conversation_owner,
+    update_influencer_profile,
 )
 from app.db.session import SessionLocal, init_db
 from app.tools.guardrails import check_human_handoff, check_sensitive_data, SENSITIVE_RESPONSE
@@ -75,7 +77,11 @@ class Orchestrator:
         }
 
     def process_message(
-        self, thread_id: str, conversation_id: int, user_message: str
+        self,
+        thread_id: str,
+        conversation_id: int,
+        user_message: str,
+        influencer_id: int | None = None,
     ) -> dict:
         """Process a user message through the graph."""
         # Guardrails
@@ -112,6 +118,9 @@ class Orchestrator:
             }
 
         config = {"configurable": {"thread_id": thread_id}}
+
+        history = get_conversation_messages(self.db_session, conversation_id, limit=20)
+
         input_state = {
             "thread_id": thread_id,
             "influencer_phone": "",
@@ -122,9 +131,18 @@ class Orchestrator:
             "qualification_complete": False,
             "messages": [HumanMessage(content=user_message)],
             "current_node": "",
+            "conversation_history": history,
+            "influencer_id": influencer_id,
         }
 
         result = self.graph.invoke(input_state, config)
+
+        # Persist influencer profile updates extracted during qualification
+        if result.get("influencer_updates") and influencer_id:
+            update_influencer_profile(
+                self.db_session, influencer_id, **result["influencer_updates"]
+            )
+            self.db_session.commit()
 
         # Extract response from messages
         response = ""

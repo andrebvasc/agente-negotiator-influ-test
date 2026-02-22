@@ -262,6 +262,7 @@ def qualify(state: NegotiatorState) -> dict:
 
     # Build state updates from extracted data
     updates = {}
+    influencer_updates = {}
     field_mapping = {
         "platform": "platform",
         "deliverable_type": "deliverable_type",
@@ -273,6 +274,14 @@ def qualify(state: NegotiatorState) -> dict:
     for ext_key, state_key in field_mapping.items():
         if extracted.get(ext_key) and not state.get(state_key):
             updates[state_key] = extracted[ext_key]
+
+    # Collect fields to persist to the influencers table
+    persist_fields = ("platform", "niche", "avg_views")
+    for field in persist_fields:
+        if extracted.get(field):
+            influencer_updates[field] = extracted[field]
+    if influencer_updates:
+        updates["influencer_updates"] = influencer_updates
 
     if extracted.get("proposed_price_brl"):
         updates["current_offer_brl"] = extracted["proposed_price_brl"]
@@ -292,7 +301,13 @@ def qualify(state: NegotiatorState) -> dict:
     missing_str = ", ".join(missing)
 
     system = SYSTEM_PROMPT.format(context=context)
-    conversation = [
+
+    # Build conversation with history for context continuity
+    conversation = []
+    for msg in (state.get("conversation_history") or []):
+        conversation.append({"role": msg["role"], "content": msg["content"]})
+    # Add instruction as the last user message
+    conversation.append(
         {
             "role": "user",
             "content": (
@@ -303,7 +318,7 @@ def qualify(state: NegotiatorState) -> dict:
                 "Depois pergunte APENAS o que falta. Seja conciso e cordial."
             ),
         }
-    ]
+    )
 
     text, _ = _run_openai_with_tools(conversation, [], system)
     text = append_handoff_suffix(text)
@@ -343,12 +358,13 @@ def negotiate(state: NegotiatorState) -> dict:
     context = _build_context(state)
     system = SYSTEM_PROMPT.format(context=context)
 
-    conversation = [
-        {
-            "role": "user",
-            "content": state["last_user_message"],
-        }
-    ]
+    # Build conversation with history for context continuity
+    conversation = []
+    for msg in (state.get("conversation_history") or []):
+        conversation.append({"role": msg["role"], "content": msg["content"]})
+    # Append current message if not already the last in history
+    if not conversation or conversation[-1]["content"] != state["last_user_message"]:
+        conversation.append({"role": "user", "content": state["last_user_message"]})
 
     text, _ = _run_openai_with_tools(
         conversation, OPENAI_TOOL_SCHEMAS, system

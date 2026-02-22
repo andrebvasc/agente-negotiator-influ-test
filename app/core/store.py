@@ -7,6 +7,31 @@ from sqlalchemy.orm import Session
 from app.db.models import Agent, Conversation, Influencer, Message, Offer
 
 
+def get_conversation_messages(
+    session: Session, conversation_id: int, limit: int = 20
+) -> list[dict]:
+    """Return the last N messages of a conversation as dicts."""
+    msgs = (
+        session.query(Message)
+        .filter_by(conversation_id=conversation_id)
+        .order_by(Message.created_at.asc())
+        .all()
+    )
+    msgs = msgs[-limit:] if len(msgs) > limit else msgs
+    return [{"role": m.role, "content": m.content} for m in msgs]
+
+
+def update_influencer_profile(session: Session, influencer_id: int, **kwargs) -> None:
+    """Update influencer fields that are still NULL (never overwrite existing data)."""
+    influencer = session.query(Influencer).get(influencer_id)
+    if not influencer:
+        return
+    for key, value in kwargs.items():
+        if value and hasattr(influencer, key) and not getattr(influencer, key):
+            setattr(influencer, key, value)
+    session.flush()
+
+
 def get_or_create_agent(session: Session, agent_id: str, name: str) -> Agent:
     agent = session.query(Agent).filter_by(agent_id=agent_id).first()
     if not agent:

@@ -39,6 +39,7 @@ class Influencer(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     niche: Mapped[str | None] = mapped_column(String(64), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    avg_views: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     conversations: Mapped[list["Conversation"]] = relationship(
         back_populates="influencer"

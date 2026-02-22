@@ -25,3 +25,6 @@ class NegotiatorState(TypedDict):
     current_node: str
     qualification_complete: bool
     messages: Annotated[list, add_messages]  # append-only
+    conversation_history: Optional[list]  # [{"role": "user"/"assistant", "content": "..."}]
+    influencer_id: Optional[int]
+    influencer_updates: Optional[dict]  # fields to persist to influencers table

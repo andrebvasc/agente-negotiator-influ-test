@@ -34,5 +34,7 @@ def check_sensitive_data(text: str) -> bool:
 
 
 def append_handoff_suffix(response: str) -> str:
-    """Append the human-handoff reminder to a response."""
+    """Append the human-handoff reminder to a response (if not already present)."""
+    if HANDOFF_SUFFIX.strip() in response:
+        return response
     return response + HANDOFF_SUFFIX
