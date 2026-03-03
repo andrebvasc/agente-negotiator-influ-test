@@ -33,18 +33,20 @@ Seu objetivo é fechar o melhor negócio possível para a agência — ou seja, 
 Regras de negociação:
 - NUNCA revele ao influenciador a faixa de preço interna (floor, target, ceiling). Isso é informação confidencial da agência.
 - NUNCA mencione os termos "floor", "target", "ceiling", "faixa de preço" ou valores mínimos/máximos que você está disposto a pagar.
-- Sempre COMECE propondo um valor próximo ao floor (o menor valor aceitável).
-- Use benchmarks de mercado como justificativa ("deals similares no mercado fecham por volta de R$X").
-- Se o influenciador pedir mais, suba gradualmente, nunca mais que 10-15% por rodada.
+- NUNCA proponha um preço primeiro. Sempre PERGUNTE ao influenciador qual o valor dele antes de qualquer negociação.
+- Use benchmarks de mercado como justificativa quando precisar argumentar ("deals similares no mercado fecham por volta de R$X").
+- Se o influenciador pedir mais do que o ceiling, suba gradualmente, nunca mais que 10-15% por rodada.
 - Só ultrapasse o ceiling se receber aprovação do operador.
 - Seja cordial, profissional e persuasivo.
 - Se o influenciador pedir para falar com um humano, respeite imediatamente.
-- Nunca colete dados sensíveis (CPF, cartão de crédito, senhas).
+- Nunca colete dados sensíveis (cartão de crédito, senhas).
 - Sempre responda em português brasileiro.
 
 Estratégia:
-- Justifique suas propostas com dados de mercado, não com limites internos.
-- Se o influenciador propor um valor acima do seu teto, NÃO faça uma contraproposta imediata. Em vez disso, pergunte qual seria o valor mínimo que ele aceitaria ou peça para ele reconsiderar com base nos dados de mercado.
+- SEMPRE espere o influenciador dizer o preço dele primeiro. Pergunte: "Qual seria o seu valor para essa parceria?" ou similar.
+- Só depois que o influenciador informar o preço, reaja com base nos seus dados internos.
+- Se o valor do influenciador estiver dentro da faixa (floor-ceiling), aceite ou negocie para baixo com benchmarks.
+- Se o valor estiver acima do ceiling, pergunte qual seria o mínimo que ele aceitaria, usando dados de mercado como argumento.
 - Mostre flexibilidade mas sempre proteja o orçamento da agência.
 - Destaque o valor da parceria de longo prazo como argumento para preços menores.
 
@@ -183,6 +185,10 @@ def _build_context(state: NegotiatorState) -> str:
     if state.get("current_offer_brl"):
         parts.append(
             f"[PROPOSTA DO INFLUENCIADOR]: R${state['current_offer_brl']:.2f}"
+        )
+    else:
+        parts.append(
+            "[O INFLUENCIADOR AINDA NÃO INFORMOU SEU PREÇO] — Pergunte qual o valor dele antes de qualquer proposta."
         )
     known = {f: state.get(f) for f in QUALIFICATION_FIELDS if state.get(f)}
     if state.get("name"):
@@ -705,6 +711,8 @@ def approval_node(state: NegotiatorState) -> dict:
     elif approved:
         return {
             "approval_required": False,
+            "deal_accepted": True,
+            "agreed_price_brl": state.get("current_offer_brl"),
             "current_node": "approval",
             "messages": [AIMessage(content="Proposta aprovada pelo operador.")],
         }
@@ -810,6 +818,8 @@ def after_negotiate(state: NegotiatorState) -> str:
 
 
 def after_approval(state: NegotiatorState) -> str:
+    if state.get("deal_accepted"):
+        return "save_deal"
     return "negotiate"
 
 
