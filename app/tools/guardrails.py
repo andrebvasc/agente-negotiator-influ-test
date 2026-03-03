@@ -8,8 +8,7 @@ HANDOFF_PATTERNS = re.compile(
 )
 
 SENSITIVE_PATTERNS = re.compile(
-    r"(\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b)"  # CPF
-    r"|(\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b)"  # cartão
+    r"(\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b)"  # cartão
     r"|(\bsenha\s*[:=]\s*\S+)",  # senha
     re.IGNORECASE,
 )
@@ -17,8 +16,8 @@ SENSITIVE_PATTERNS = re.compile(
 HANDOFF_SUFFIX = "\n\n_Se preferir falar com uma pessoa, digite **HUMANO**._"
 
 SENSITIVE_RESPONSE = (
-    "Por segurança, não posso coletar dados sensíveis como CPF, "
-    "número de cartão ou senhas. Por favor, nunca compartilhe essas "
+    "Por segurança, não posso coletar dados como "
+    "número de cartão de crédito ou senhas. Por favor, nunca compartilhe essas "
     "informações por este canal."
 )
 

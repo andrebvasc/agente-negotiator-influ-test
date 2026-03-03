@@ -38,8 +38,12 @@ class Influencer(Base):
     phone: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     niche: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    platform: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    platform: Mapped[str | None] = mapped_column(String(128), nullable=True)
     avg_views: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cpf: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    phone_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     conversations: Mapped[list["Conversation"]] = relationship(
         back_populates="influencer"

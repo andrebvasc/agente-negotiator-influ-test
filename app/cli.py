@@ -40,6 +40,19 @@ def chat(
             console.print("[dim]Conversa anterior retomada.[/dim]")
         else:
             console.print("[dim]Nova conversa iniciada.[/dim]")
+            # Send the opening greeting for new conversations
+            with console.status("[bold yellow]Preparando...[/bold yellow]"):
+                greeting = orchestrator.send_greeting(
+                    conv.id,
+                    influencer_name=influencer_obj.name,
+                )
+            console.print(
+                Panel(
+                    greeting,
+                    title="[bold magenta]Negociador[/bold magenta]",
+                    border_style="magenta",
+                )
+            )
 
         console.print(
             "[dim]Digite sua mensagem como influenciador. "

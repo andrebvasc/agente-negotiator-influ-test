@@ -4,7 +4,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Agent, Conversation, Influencer, Message, Offer
+from app.db.models import Agent, Conversation, Deal, Influencer, Message, Offer
 
 
 def get_conversation_messages(
@@ -22,12 +22,24 @@ def get_conversation_messages(
 
 
 def update_influencer_profile(session: Session, influencer_id: int, **kwargs) -> None:
-    """Update influencer fields that are still NULL (never overwrite existing data)."""
+    """Update influencer fields that are still NULL (never overwrite existing data).
+
+    Special handling for ``platform``: merges new values with existing ones
+    (comma-separated set).
+    """
     influencer = session.query(Influencer).get(influencer_id)
     if not influencer:
         return
     for key, value in kwargs.items():
-        if value and hasattr(influencer, key) and not getattr(influencer, key):
+        if not value or not hasattr(influencer, key):
+            continue
+        if key == "platform":
+            existing = set(influencer.platform.split(",")) if influencer.platform else set()
+            existing.discard("")
+            new_vals = set(value.split(",")) if isinstance(value, str) else set(value)
+            merged = existing | new_vals
+            influencer.platform = ",".join(sorted(merged))
+        elif not getattr(influencer, key):
             setattr(influencer, key, value)
     session.flush()
 
@@ -117,4 +129,30 @@ def update_conversation_owner(
     conv = session.query(Conversation).get(conversation_id)
     if conv:
         conv.owner = owner
+        session.flush()
+
+
+def save_deal(session: Session, deal_data: dict) -> Deal:
+    """Create a Deal record from the deal_to_save dict."""
+    deal = Deal(
+        influencer_name=deal_data.get("influencer_name", ""),
+        platform=deal_data.get("platform", ""),
+        niche=deal_data.get("niche", ""),
+        deliverable_type=deal_data.get("deliverable_type", ""),
+        qty=deal_data.get("qty", 1),
+        avg_views=deal_data.get("avg_views", 0),
+        final_price_brl=deal_data.get("final_price_brl", 0.0),
+        cpm_brl=deal_data.get("cpm_brl", 0.0),
+    )
+    session.add(deal)
+    session.flush()
+    return deal
+
+
+def update_conversation_status(
+    session: Session, conversation_id: int, status: str
+) -> None:
+    conv = session.query(Conversation).get(conversation_id)
+    if conv:
+        conv.status = status
         session.flush()

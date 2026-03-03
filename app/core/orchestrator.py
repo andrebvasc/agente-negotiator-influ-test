@@ -7,7 +7,13 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from app.agents.negotiator import build_graph
+from app.agents.negotiator import (
+    PERSONAL_INFO_FIELDS,
+    build_graph,
+    extract_personal_info,
+    generate_greeting,
+    generate_post_deal_response,
+)
 from app.core.registry import registry
 from app.core.store import (
     create_conversation,
@@ -15,8 +21,10 @@ from app.core.store import (
     get_conversation_messages,
     get_or_create_agent,
     get_or_create_influencer,
+    save_deal,
     save_message,
     update_conversation_owner,
+    update_conversation_status,
     update_influencer_profile,
 )
 from app.db.session import SessionLocal, init_db
@@ -76,6 +84,79 @@ class Orchestrator:
             "resumed": False,
         }
 
+    def send_greeting(
+        self,
+        conversation_id: int,
+        user_message: str | None = None,
+        influencer_name: str | None = None,
+    ) -> str:
+        """Generate and persist the opening greeting for a new conversation.
+
+        If the influencer already has a name on file the greeting skips
+        self-introduction.  If *user_message* is provided the greeting is
+        adapted to respond to it.
+        """
+        greeting = generate_greeting(
+            user_message=user_message,
+            influencer_name=influencer_name,
+        )
+        save_message(self.db_session, conversation_id, "assistant", greeting)
+        self.db_session.commit()
+        return greeting
+
+    def _process_post_deal(
+        self, conversation_id: int, user_message: str, influencer_id: int | None
+    ) -> dict:
+        """Handle messages after a deal is closed — collect personal info."""
+        save_message(self.db_session, conversation_id, "user", user_message)
+        self.db_session.commit()
+
+        # Load already-known personal fields from the influencer
+        from app.db.models import Influencer
+
+        known = {}
+        inf = None
+        if influencer_id:
+            inf = self.db_session.query(Influencer).get(influencer_id)
+            if inf:
+                for f in PERSONAL_INFO_FIELDS:
+                    val = getattr(inf, f, None)
+                    if val:
+                        known[f] = val
+
+        # Extract new personal data from message
+        extracted = extract_personal_info(user_message, known)
+
+        # Merge extracted into influencer record
+        if extracted and influencer_id:
+            update_influencer_profile(self.db_session, influencer_id, **extracted)
+            self.db_session.commit()
+            known.update({k: v for k, v in extracted.items() if v})
+
+        # Check what's still missing
+        missing = [f for f in PERSONAL_INFO_FIELDS if not known.get(f)]
+
+        influencer_name = inf.name if inf else None
+        response = generate_post_deal_response(
+            user_message, known, missing, influencer_name
+        )
+
+        # If all info collected, mark conversation as fully complete
+        if not missing:
+            from app.core.store import update_conversation_status
+
+            update_conversation_status(self.db_session, conversation_id, "completed")
+            self.db_session.commit()
+
+        save_message(self.db_session, conversation_id, "assistant", response)
+        self.db_session.commit()
+
+        return {
+            "response": response,
+            "owner": "agent",
+            "approval_required": False,
+        }
+
     def process_message(
         self,
         thread_id: str,
@@ -84,6 +165,15 @@ class Orchestrator:
         influencer_id: int | None = None,
     ) -> dict:
         """Process a user message through the graph."""
+        # Post-deal phase: collect personal info instead of running the graph
+        from app.db.models import Conversation
+
+        conv = self.db_session.query(Conversation).get(conversation_id)
+        if conv and conv.status == "closed_deal":
+            return self._process_post_deal(
+                conversation_id, user_message, influencer_id
+            )
+
         # Guardrails
         if check_sensitive_data(user_message):
             save_message(self.db_session, conversation_id, "user", user_message)
@@ -121,6 +211,17 @@ class Orchestrator:
 
         history = get_conversation_messages(self.db_session, conversation_id, limit=20)
 
+        # Load existing influencer profile to pre-populate known fields
+        influencer_profile = {}
+        if influencer_id:
+            from app.db.models import Influencer
+            inf = self.db_session.query(Influencer).get(influencer_id)
+            if inf:
+                for field in ("name", "platform", "niche", "avg_views"):
+                    val = getattr(inf, field, None)
+                    if val:
+                        influencer_profile[field] = val
+
         input_state = {
             "thread_id": thread_id,
             "influencer_phone": "",
@@ -129,10 +230,12 @@ class Orchestrator:
             "owner": "agent",
             "approval_required": False,
             "qualification_complete": False,
+            "deal_accepted": False,
             "messages": [HumanMessage(content=user_message)],
             "current_node": "",
             "conversation_history": history,
             "influencer_id": influencer_id,
+            **influencer_profile,
         }
 
         result = self.graph.invoke(input_state, config)
@@ -142,6 +245,12 @@ class Orchestrator:
             update_influencer_profile(
                 self.db_session, influencer_id, **result["influencer_updates"]
             )
+            self.db_session.commit()
+
+        # Persist deal if the influencer accepted
+        if result.get("deal_to_save"):
+            save_deal(self.db_session, result["deal_to_save"])
+            update_conversation_status(self.db_session, conversation_id, "closed_deal")
             self.db_session.commit()
 
         # Extract response from messages

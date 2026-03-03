@@ -9,6 +9,7 @@ class NegotiatorState(TypedDict):
     thread_id: str
     influencer_phone: str
     agent_id: str
+    name: Optional[str]
     platform: Optional[str]
     deliverable_type: Optional[str]
     niche: Optional[str]
@@ -28,3 +29,7 @@ class NegotiatorState(TypedDict):
     conversation_history: Optional[list]  # [{"role": "user"/"assistant", "content": "..."}]
     influencer_id: Optional[int]
     influencer_updates: Optional[dict]  # fields to persist to influencers table
+    last_agent_offer_brl: Optional[float]  # last price proposed by the agent
+    deal_accepted: bool
+    agreed_price_brl: Optional[float]
+    deal_to_save: Optional[dict]
