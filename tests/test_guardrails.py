@@ -26,11 +26,12 @@ class TestCheckHumanHandoff:
 
 
 class TestCheckSensitiveData:
-    def test_detects_cpf(self):
-        assert check_sensitive_data("meu cpf é 123.456.789-00") is True
+    def test_cpf_not_sensitive(self):
+        # CPF is collected post-deal, so it's not flagged as sensitive
+        assert check_sensitive_data("meu cpf é 123.456.789-00") is False
 
-    def test_detects_cpf_no_dots(self):
-        assert check_sensitive_data("cpf 12345678900") is True
+    def test_cpf_no_dots_not_sensitive(self):
+        assert check_sensitive_data("cpf 12345678900") is False
 
     def test_detects_card(self):
         assert check_sensitive_data("cartão 4111 1111 1111 1111") is True

@@ -61,8 +61,8 @@ Aceitação de deal:
 GREETING_NEW = (
     "Olá, sou a Raimunda, tudo bem com você? 😊\n\n"
     "Tô aqui para lhe auxiliar na parceria com a Gocase!\n\n"
-    "Você consegue me enviar seus valores e formatos disponíveis? "
-    "Assim já alinhamos a melhor proposta pra você.\n\n"
+    "Para começarmos, pode me dizer seu nome e me enviar seus valores "
+    "e formatos disponíveis? Assim já alinhamos a melhor proposta pra você.\n\n"
     "Se preferir, também posso te passar mais detalhes da marca, "
     "objetivos da campanha e expectativas de entrega.\n\n"
     "Fico no aguardo! ✨"
@@ -74,7 +74,7 @@ GREETING_SYSTEM = (
     "Mantenha o tom amigável e profissional. Use emoji com moderação (1-2 no máximo)."
 )
 
-QUALIFICATION_FIELDS = ["platform", "deliverable_type", "avg_views", "qty", "deadline"]
+QUALIFICATION_FIELDS = ["name", "platform", "deliverable_type", "avg_views", "qty", "deadline"]
 
 EXTRACT_INFO_TOOL = {
     "type": "function",
@@ -246,6 +246,11 @@ def generate_greeting(
         parts.append(
             f"O influenciador já enviou uma mensagem: '{user_message}'\n"
             "Responda ao que ele disse/perguntou de forma natural ANTES de pedir valores e formatos.\n"
+        )
+
+    if not is_known:
+        parts.append(
+            "Peça o nome do influenciador caso ele ainda não tenha se apresentado.\n"
         )
 
     parts.append(
@@ -508,6 +513,7 @@ def qualify(state: NegotiatorState) -> dict:
     updates = {}
     influencer_updates = {}
     field_mapping = {
+        "name": "name",
         "deliverable_type": "deliverable_type",
         "avg_views": "avg_views",
         "qty": "qty",
@@ -517,10 +523,6 @@ def qualify(state: NegotiatorState) -> dict:
     for ext_key, state_key in field_mapping.items():
         if extracted.get(ext_key) and not state.get(state_key):
             updates[state_key] = extracted[ext_key]
-
-    # Name: only set if not already known
-    if extracted.get("name") and not state.get("name"):
-        updates["name"] = extracted["name"]
 
     # Platform: merge as comma-separated set
     if extracted.get("platform"):
@@ -558,10 +560,6 @@ def qualify(state: NegotiatorState) -> dict:
     # Step 3: Generate natural question for missing fields
     context = _build_context(state)
     known_now = {f: merged[f] for f in QUALIFICATION_FIELDS if merged.get(f)}
-    # Include name in known data so LLM can address the influencer by name
-    name = updates.get("name") or state.get("name")
-    if name:
-        known_now["name"] = name
     missing_str = ", ".join(missing)
 
     system = SYSTEM_PROMPT.format(context=context)
