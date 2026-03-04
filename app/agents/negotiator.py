@@ -33,9 +33,9 @@ Seu objetivo é fechar o melhor negócio possível para a agência — ou seja, 
 Regras de negociação:
 - NUNCA revele ao influenciador a faixa de preço interna (floor, target, ceiling). Isso é informação confidencial da agência.
 - NUNCA mencione os termos "floor", "target", "ceiling", "faixa de preço" ou valores mínimos/máximos que você está disposto a pagar.
-- NUNCA proponha um preço primeiro. Sempre PERGUNTE ao influenciador qual o valor dele antes de qualquer negociação.
-- Use benchmarks de mercado como justificativa quando precisar argumentar ("deals similares no mercado fecham por volta de R$X").
-- Se o influenciador pedir mais do que o ceiling, suba gradualmente, nunca mais que 10-15% por rodada.
+- NUNCA proponha um valor em reais (R$) por iniciativa própria. Você NÃO sugere preços. Quem define preço é o influenciador.
+- A ÚNICA exceção é quando há uma [CONTRAPROPOSTA DO OPERADOR] nos dados internos — nesse caso, apresente exatamente aquele valor.
+- Use benchmarks de mercado como ARGUMENTO para convencer o influenciador a baixar o preço, mas sem propor um número específico. Ex: "deals similares no mercado fecham por valores bem abaixo disso" ou "o mercado pratica valores mais acessíveis para esse tipo de parceria".
 - Só ultrapasse o ceiling se receber aprovação do operador.
 - Seja cordial, profissional e persuasivo.
 - Se o influenciador pedir para falar com um humano, respeite imediatamente.
@@ -45,10 +45,13 @@ Regras de negociação:
 Estratégia:
 - SEMPRE espere o influenciador dizer o preço dele primeiro. Pergunte: "Qual seria o seu valor para essa parceria?" ou similar.
 - Só depois que o influenciador informar o preço, reaja com base nos seus dados internos.
-- Se o valor do influenciador estiver dentro da faixa (floor-ceiling), aceite ou negocie para baixo com benchmarks.
-- Se o valor estiver acima do ceiling, pergunte qual seria o mínimo que ele aceitaria, usando dados de mercado como argumento.
+- Se o valor do influenciador estiver dentro da faixa (floor-ceiling), aceite.
+- Se o valor estiver acima do ceiling, NÃO faça contraproposta com valor. Em vez disso:
+  - Diga que está acima do que o mercado pratica para parcerias similares.
+  - Peça ao influenciador para reconsiderar e informar o mínimo que aceitaria.
+  - Destaque a parceria de longo prazo como argumento.
+  - NUNCA diga "que tal R$X?" ou "posso oferecer R$X" por conta própria.
 - Mostre flexibilidade mas sempre proteja o orçamento da agência.
-- Destaque o valor da parceria de longo prazo como argumento para preços menores.
 
 Aceitação de deal:
 - Quando o influenciador ACEITAR explicitamente uma proposta de preço (ex: "fechado", "aceito", "pode ser", "ok", "sim", "vamos nesse valor", "tá bom", "beleza"), chame IMEDIATAMENTE a tool `confirm_deal` com accepted=true e o valor acordado em agreed_price_brl.
@@ -189,6 +192,13 @@ def _build_context(state: NegotiatorState) -> str:
     else:
         parts.append(
             "[O INFLUENCIADOR AINDA NÃO INFORMOU SEU PREÇO] — Pergunte qual o valor dele antes de qualquer proposta."
+        )
+    if state.get("operator_counter_offer_brl"):
+        parts.append(
+            f"[CONTRAPROPOSTA DO OPERADOR]: R${state['operator_counter_offer_brl']:.2f}\n"
+            "AÇÃO OBRIGATÓRIA: Apresente EXATAMENTE este valor como sua oferta ao influenciador. "
+            "Diga algo como 'Consigo te oferecer R$X.XXX por essa parceria, o que acha?'. "
+            "NÃO pergunte o mínimo do influenciador — OFEREÇA este valor diretamente."
         )
     known = {f: state.get(f) for f in QUALIFICATION_FIELDS if state.get(f)}
     if state.get("name"):
@@ -664,6 +674,7 @@ def negotiate(state: NegotiatorState) -> dict:
         "messages": [AIMessage(content=text)],
         "approval_required": needs_approval,
         "current_node": "negotiate",
+        "operator_counter_offer_brl": None,  # clear after use
     }
 
     # Track the last price the agent proposed so we know the value in play
@@ -698,12 +709,16 @@ def approval_node(state: NegotiatorState) -> dict:
         counter = None
 
     if counter:
+        # Update ceiling to operator's counter-offer so the agent can propose it
+        updated_range = dict(state.get("suggested_range") or {})
+        updated_range["ceiling"] = counter
         return {
-            "current_offer_brl": counter,
+            "suggested_range": updated_range,
+            "operator_counter_offer_brl": counter,
             "approval_required": False,
             "current_node": "approval",
             "messages": [
-                AIMessage(content=f"Operador ajustou a proposta para R${counter:.2f}.")
+                AIMessage(content=f"Operador definiu contraproposta de R${counter:.2f}.")
             ],
         }
     elif approved:

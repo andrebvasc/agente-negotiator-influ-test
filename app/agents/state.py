@@ -33,3 +33,4 @@ class NegotiatorState(TypedDict):
     deal_accepted: bool
     agreed_price_brl: Optional[float]
     deal_to_save: Optional[dict]
+    operator_counter_offer_brl: Optional[float]  # counter-offer set by operator

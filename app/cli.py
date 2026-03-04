@@ -109,14 +109,17 @@ def chat(
                     approval = orchestrator.handle_approval(
                         thread_id,
                         {"approved": False, "counter_offer_brl": counter},
+                        conversation_id=conv.id,
                     )
                 elif decision.lower() in ("sim", "s", "yes"):
                     approval = orchestrator.handle_approval(
-                        thread_id, {"approved": True}
+                        thread_id, {"approved": True},
+                        conversation_id=conv.id,
                     )
                 else:
                     approval = orchestrator.handle_approval(
-                        thread_id, {"approved": False}
+                        thread_id, {"approved": False},
+                        conversation_id=conv.id,
                     )
 
                 console.print(

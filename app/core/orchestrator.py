@@ -273,12 +273,20 @@ class Orchestrator:
             "approval_required": result.get("approval_required", False),
         }
 
-    def handle_approval(self, thread_id: str, decision: dict) -> dict:
+    def handle_approval(
+        self, thread_id: str, decision: dict, conversation_id: int | None = None
+    ) -> dict:
         """Resume graph after approval interrupt."""
         from langgraph.types import Command
 
         config = {"configurable": {"thread_id": thread_id}}
         result = self.graph.invoke(Command(resume=decision), config)
+
+        # Persist deal if approval led to deal closure
+        if result.get("deal_to_save") and conversation_id:
+            save_deal(self.db_session, result["deal_to_save"])
+            update_conversation_status(self.db_session, conversation_id, "closed_deal")
+            self.db_session.commit()
 
         response = ""
         if result.get("messages"):
@@ -286,6 +294,10 @@ class Orchestrator:
                 if hasattr(msg, "content") and not isinstance(msg, HumanMessage):
                     response = msg.content
                     break
+
+        if response and conversation_id:
+            save_message(self.db_session, conversation_id, "assistant", response)
+            self.db_session.commit()
 
         return {
             "response": response or "Aprovação processada.",
