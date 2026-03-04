@@ -1,4 +1,4 @@
-"""Guardrails: human handoff detection and sensitive data checks."""
+"""Guardrails: detecção de handoff humano e checagem de dados sensíveis."""
 
 import re
 
@@ -23,17 +23,17 @@ SENSITIVE_RESPONSE = (
 
 
 def check_human_handoff(text: str) -> bool:
-    """Return True if user is requesting a human agent."""
+    """Retorna True se o usuário está pedindo um atendente humano."""
     return bool(HANDOFF_PATTERNS.search(text))
 
 
 def check_sensitive_data(text: str) -> bool:
-    """Return True if text contains sensitive data (CPF, card number, password)."""
+    """Retorna True se o texto contém dados sensíveis (cartão de crédito, senha)."""
     return bool(SENSITIVE_PATTERNS.search(text))
 
 
 def append_handoff_suffix(response: str) -> str:
-    """Append the human-handoff reminder to a response (if not already present)."""
+    """Adiciona o lembrete de handoff humano à resposta (se ainda não presente)."""
     if HANDOFF_SUFFIX.strip() in response:
         return response
     return response + HANDOFF_SUFFIX

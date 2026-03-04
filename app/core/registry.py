@@ -1,4 +1,4 @@
-"""Agent registry: manages available agent configurations."""
+"""Registro de agentes: gerencia configurações de agentes disponíveis."""
 
 from dataclasses import dataclass, field
 
@@ -12,7 +12,7 @@ class AgentConfig:
 
 
 class AgentRegistry:
-    """Simple in-memory registry of agent configurations."""
+    """Registro em memória de configurações de agentes."""
 
     def __init__(self):
         self._agents: dict[str, AgentConfig] = {}

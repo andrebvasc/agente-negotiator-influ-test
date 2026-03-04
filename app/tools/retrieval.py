@@ -1,4 +1,4 @@
-"""Retrieval tool: query historical deals from SQLite."""
+"""Tool de retrieval: consulta deals históricos no SQLite."""
 
 from statistics import median
 
@@ -16,9 +16,9 @@ def retrieve_benchmarks(
     k: int = 5,
     session=None,
 ) -> dict:
-    """Query deals filtered by platform + deliverable_type, sorted by view proximity.
+    """Consulta deals filtrados por plataforma + tipo de entregável, ordenados por proximidade de views.
 
-    Returns stats (count, avg_cpm, median_price, min_price, max_price) + top-k samples.
+    Retorna estatísticas (count, avg_cpm, median_price, min_price, max_price) + top-k amostras.
     """
     own_session = session is None
     if own_session:

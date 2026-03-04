@@ -1,4 +1,4 @@
-"""LangGraph graph for the negotiator agent."""
+"""Grafo LangGraph do agente negociador."""
 
 import json
 import os
@@ -127,6 +127,22 @@ EXTRACT_INFO_TOOL = {
                 "type": "number",
                 "description": "Preço proposto pelo influenciador em reais, se mencionado. Converter '100k' para 100000.",
             },
+            "platform_details": {
+                "type": "object",
+                "description": (
+                    "Detalhamento por plataforma quando o influenciador informa qty e/ou avg_views "
+                    "separados por plataforma. Ex: {'instagram': {'qty': 3, 'avg_views': 80000}, "
+                    "'tiktok': {'qty': 2, 'avg_views': 150000}}. Só preencha se o influenciador "
+                    "explicitamente separar os dados por plataforma."
+                ),
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "qty": {"type": "integer"},
+                        "avg_views": {"type": "integer"},
+                    },
+                },
+            },
         },
         "required": [],
         "additionalProperties": False,
@@ -160,9 +176,9 @@ CONFIRM_DEAL_TOOL = {
 
 
 def _build_context(state: NegotiatorState) -> str:
-    """Build context string for the system prompt.
+    """Monta a string de contexto para o system prompt.
 
-    Uses internal labels so the model knows the values but doesn't leak them.
+    Usa rótulos internos para que o modelo conheça os valores sem vazá-los.
     """
     parts = []
     if state.get("suggested_range"):
@@ -200,16 +216,25 @@ def _build_context(state: NegotiatorState) -> str:
             "Diga algo como 'Consigo te oferecer R$X.XXX por essa parceria, o que acha?'. "
             "NÃO pergunte o mínimo do influenciador — OFEREÇA este valor diretamente."
         )
+    if state.get("suggested_range_per_platform"):
+        lines = ["[FAIXAS DE PREÇO POR PLATAFORMA — NUNCA revelar]"]
+        for plat, pr in state["suggested_range_per_platform"].items():
+            lines.append(
+                f"  {plat}: floor=R${pr['floor']:.2f}, target=R${pr['target']:.2f}, ceiling=R${pr['ceiling']:.2f}"
+            )
+        parts.append("\n".join(lines))
     known = {f: state.get(f) for f in QUALIFICATION_FIELDS if state.get(f)}
     if state.get("name"):
         known["name"] = state["name"]
+    if state.get("platform_details"):
+        known["platform_details"] = state["platform_details"]
     if known:
         parts.append(f"Dados coletados do influenciador: {known}")
     return "\n".join(parts)
 
 
 def _extract_text(output_items) -> str:
-    """Extract text content from OpenAI response output items."""
+    """Extrai conteúdo de texto dos itens de resposta da OpenAI."""
     texts = []
     for item in output_items:
         if hasattr(item, "type") and item.type == "message":
@@ -225,21 +250,21 @@ def generate_greeting(
     user_message: str | None = None,
     influencer_name: str | None = None,
 ) -> str:
-    """Return the opening greeting for a new conversation.
+    """Retorna a saudação inicial para uma nova conversa.
 
-    Three scenarios:
-    1. Known influencer (has name) → returning-contact greeting, no self-intro.
-    2. New influencer + first message → adapted greeting with self-intro + answer.
-    3. New influencer, no message → default ``GREETING_NEW``.
+    Três cenários:
+    1. Influenciador conhecido (tem nome) → saudação de retorno, sem apresentação.
+    2. Novo influenciador + primeira mensagem → saudação adaptada com apresentação + resposta.
+    3. Novo influenciador, sem mensagem → ``GREETING_NEW`` padrão.
     """
     is_known = bool(influencer_name)
     has_message = bool(user_message and user_message.strip())
 
-    # Scenario 3: brand-new contact, no message yet
+    # Cenário 3: contato novo, sem mensagem ainda
     if not is_known and not has_message:
         return GREETING_NEW
 
-    # Scenarios 1 & 2: use LLM to craft the right tone
+    # Cenários 1 e 2: usa LLM para gerar o tom adequado
     parts = []
     if is_known:
         parts.append(
@@ -280,7 +305,7 @@ def generate_greeting(
     return text or GREETING_NEW
 
 
-# ── Post-deal personal info collection ───────────────────────────
+# ── Coleta de dados pessoais pós-deal ─────────────────────────────
 
 PERSONAL_INFO_FIELDS = ["email", "cpf", "address", "phone_model"]
 
@@ -315,7 +340,7 @@ EXTRACT_PERSONAL_TOOL = {
 
 
 def extract_personal_info(user_message: str, known: dict) -> dict:
-    """Extract personal info fields from user message using LLM."""
+    """Extrai dados pessoais da mensagem do usuário via LLM."""
     client = openai.OpenAI()
     known_str = json.dumps(known, ensure_ascii=False) if known else "nenhum"
 
@@ -347,7 +372,7 @@ def extract_personal_info(user_message: str, known: dict) -> dict:
 def generate_post_deal_response(
     user_message: str, known: dict, missing: list[str], influencer_name: str | None
 ) -> str:
-    """Generate a natural response during post-deal info collection."""
+    """Gera resposta natural durante a coleta de dados pós-deal."""
     name = influencer_name or "você"
 
     if not missing:
@@ -392,7 +417,7 @@ def generate_post_deal_response(
 
 
 def _dispatch_tool(name: str, arguments: dict, session=None, deal_result: dict | None = None) -> dict:
-    """Dispatch a tool call to the appropriate function."""
+    """Despacha uma chamada de tool para a função correspondente."""
     if name == "confirm_deal":
         if deal_result is not None:
             deal_result["accepted"] = arguments.get("accepted", False)
@@ -422,7 +447,7 @@ def _dispatch_tool(name: str, arguments: dict, session=None, deal_result: dict |
                 benchmarks=arguments.get("benchmarks"),
             )
         }
-    return {"error": f"Unknown tool: {name}"}
+    return {"error": f"Tool desconhecida: {name}"}
 
 
 def _run_openai_with_tools(
@@ -433,10 +458,10 @@ def _run_openai_with_tools(
     session=None,
     deal_result: dict | None = None,
 ) -> tuple[str, list]:
-    """Run OpenAI Responses API with tool loop."""
+    """Executa a API Responses da OpenAI com loop de tools."""
     client = openai.OpenAI()
 
-    for _attempt in range(10):  # max tool loops
+    for _attempt in range(10):  # máximo de iterações de tools
         response = client.responses.create(
             model=model,
             input=conversation,
@@ -469,11 +494,11 @@ def _run_openai_with_tools(
     return text, conversation
 
 
-# ── LangGraph Nodes ──────────────────────────────────────────────
+# ── Nós do LangGraph ─────────────────────────────────────────────
 
 
 def _extract_fields_from_message(user_message: str, state: NegotiatorState) -> dict:
-    """Use OpenAI to extract structured fields from user message."""
+    """Usa OpenAI para extrair campos estruturados da mensagem do usuário."""
     client = openai.OpenAI()
 
     known = {f: state.get(f) for f in QUALIFICATION_FIELDS if state.get(f)}
@@ -513,13 +538,13 @@ def _extract_fields_from_message(user_message: str, state: NegotiatorState) -> d
 
 
 def qualify(state: NegotiatorState) -> dict:
-    """Extract info from user message, then ask for missing fields."""
-    # Step 1: Extract data from user message
+    """Extrai info da mensagem do usuário e pergunta campos faltantes."""
+    # Passo 1: Extrair dados da mensagem do usuário
     extracted = _extract_fields_from_message(
         state["last_user_message"], state
     )
 
-    # Build state updates from extracted data
+    # Monta atualizações do estado a partir dos dados extraídos
     updates = {}
     influencer_updates = {}
     field_mapping = {
@@ -534,7 +559,7 @@ def qualify(state: NegotiatorState) -> dict:
         if extracted.get(ext_key) and not state.get(state_key):
             updates[state_key] = extracted[ext_key]
 
-    # Platform: merge as comma-separated set
+    # Plataforma: merge como set separado por vírgula
     if extracted.get("platform"):
         new_platforms = extracted["platform"]
         if isinstance(new_platforms, str):
@@ -544,12 +569,12 @@ def qualify(state: NegotiatorState) -> dict:
         merged = existing | set(new_platforms)
         updates["platform"] = ",".join(sorted(merged))
 
-    # Collect fields to persist to the influencers table
+    # Campos para persistir na tabela de influenciadores
     persist_fields = ("name", "niche", "avg_views")
     for field in persist_fields:
         if extracted.get(field):
             influencer_updates[field] = extracted[field]
-    # Platform persisted as merged comma-separated
+    # Plataforma persistida como merge separado por vírgula
     if updates.get("platform"):
         influencer_updates["platform"] = updates["platform"]
     if influencer_updates:
@@ -558,27 +583,51 @@ def qualify(state: NegotiatorState) -> dict:
     if extracted.get("proposed_price_brl"):
         updates["current_offer_brl"] = extracted["proposed_price_brl"]
 
-    # Step 2: Check what's still missing after extraction
+    # Detalhes por plataforma: merge com existente
+    if extracted.get("platform_details"):
+        existing_pd = dict(state.get("platform_details") or {})
+        for plat, details in extracted["platform_details"].items():
+            if plat in existing_pd:
+                existing_pd[plat].update({k: v for k, v in details.items() if v})
+            else:
+                existing_pd[plat] = details
+        updates["platform_details"] = existing_pd
+
+    # Passo 2: Checar o que ainda falta após extração
     merged = {**{f: state.get(f) for f in QUALIFICATION_FIELDS}, **updates}
     missing = [f for f in QUALIFICATION_FIELDS if not merged.get(f)]
 
     if not missing:
+        # Garantir que platform_details está preenchido
+        merged_platform = updates.get("platform") or state.get("platform", "")
+        platforms = [p.strip() for p in merged_platform.split(",") if p.strip()]
+        merged_pd = updates.get("platform_details") or state.get("platform_details")
+
+        if not merged_pd:
+            # Auto-preencher platform_details a partir de qty/avg_views gerais
+            merged_qty = updates.get("qty") or merged.get("qty", 1)
+            merged_views = updates.get("avg_views") or merged.get("avg_views", 50000)
+            updates["platform_details"] = {
+                plat: {"qty": merged_qty, "avg_views": merged_views}
+                for plat in (platforms or ["instagram"])
+            }
+
         updates["qualification_complete"] = True
         updates["current_node"] = "qualify"
         return updates
 
-    # Step 3: Generate natural question for missing fields
+    # Passo 3: Gerar pergunta natural para campos faltantes
     context = _build_context(state)
     known_now = {f: merged[f] for f in QUALIFICATION_FIELDS if merged.get(f)}
     missing_str = ", ".join(missing)
 
     system = SYSTEM_PROMPT.format(context=context)
 
-    # Build conversation with history for context continuity
+    # Monta conversa com histórico para continuidade de contexto
     conversation = []
     for msg in (state.get("conversation_history") or []):
         conversation.append({"role": msg["role"], "content": msg["content"]})
-    # Add instruction as the last user message
+    # Adiciona instrução como última mensagem do usuário
     conversation.append(
         {
             "role": "user",
@@ -605,21 +654,97 @@ def qualify(state: NegotiatorState) -> dict:
 
 
 def retrieve_benchmarks_node(state: NegotiatorState) -> dict:
-    """Deterministic node: query benchmarks from DB."""
+    """Nó determinístico: consulta benchmarks no banco."""
+    platform_details = state.get("platform_details")
+    deliverable_type = state.get("deliverable_type", "reel")
+    niche = state.get("niche")
+
+    if platform_details and len(platform_details) > 1:
+        # Multi-plataforma: busca benchmarks por plataforma
+        benchmarks_per_platform = {}
+        total_count = 0
+        weighted_cpm_sum = 0.0
+        all_prices = []
+
+        for plat, details in platform_details.items():
+            avg_views = details.get("avg_views") or state.get("avg_views", 50000)
+            b = retrieve_benchmarks(
+                platform=plat,
+                deliverable_type=deliverable_type,
+                avg_views=avg_views,
+                niche=niche,
+            )
+            benchmarks_per_platform[plat] = b
+            count = b.get("count", 0)
+            total_count += count
+            if count > 0:
+                weighted_cpm_sum += b["avg_cpm"] * count
+                all_prices.append(b.get("median_price", 0))
+
+        # Resumo combinado dos benchmarks (média ponderada)
+        combined = {
+            "count": total_count,
+            "avg_cpm": round(weighted_cpm_sum / total_count, 2) if total_count else 0,
+            "median_price": round(sum(all_prices) / len(all_prices), 2) if all_prices else 0,
+        }
+        return {
+            "benchmarks": combined,
+            "benchmarks_per_platform": benchmarks_per_platform,
+            "current_node": "retrieve_benchmarks",
+        }
+
+    # Plataforma única
     platform_raw = state.get("platform", "instagram")
     first_platform = platform_raw.split(",")[0] if platform_raw else "instagram"
     benchmarks = retrieve_benchmarks(
         platform=first_platform,
-        deliverable_type=state.get("deliverable_type", "reel"),
+        deliverable_type=deliverable_type,
         avg_views=state.get("avg_views", 50000),
-        niche=state.get("niche"),
+        niche=niche,
     )
     return {"benchmarks": benchmarks, "current_node": "retrieve_benchmarks"}
 
 
 def price_node(state: NegotiatorState) -> dict:
-    """Deterministic node: calculate price range."""
-    target_cpm = state.get("target_cpm_brl", 40.0)  # default CPM
+    """Nó determinístico: calcula faixa de preço."""
+    target_cpm = state.get("target_cpm_brl", 40.0)  # CPM padrão
+    platform_details = state.get("platform_details")
+    benchmarks_per_platform = state.get("benchmarks_per_platform")
+
+    if platform_details and len(platform_details) > 1:
+        # Multi-plataforma: calcula faixa por plataforma e soma
+        range_per_platform = {}
+        total_floor = 0.0
+        total_target = 0.0
+        total_ceiling = 0.0
+
+        for plat, details in platform_details.items():
+            avg_views = details.get("avg_views") or state.get("avg_views", 50000)
+            qty = details.get("qty") or state.get("qty", 1)
+            plat_benchmarks = (benchmarks_per_platform or {}).get(plat)
+            pr = calculate_price_range(
+                avg_views=avg_views,
+                qty=qty,
+                target_cpm_brl=target_cpm,
+                benchmarks=plat_benchmarks,
+            )
+            range_per_platform[plat] = pr
+            total_floor += pr["floor"]
+            total_target += pr["target"]
+            total_ceiling += pr["ceiling"]
+
+        combined_range = {
+            "floor": round(total_floor, 2),
+            "target": round(total_target, 2),
+            "ceiling": round(total_ceiling, 2),
+        }
+        return {
+            "suggested_range": combined_range,
+            "suggested_range_per_platform": range_per_platform,
+            "current_node": "price",
+        }
+
+    # Plataforma única
     price_range = calculate_price_range(
         avg_views=state.get("avg_views", 50000),
         qty=state.get("qty", 1),
@@ -630,7 +755,7 @@ def price_node(state: NegotiatorState) -> dict:
 
 
 def _extract_price_from_text(text: str) -> float | None:
-    """Extract the last R$ price mentioned in agent's response."""
+    """Extrai o último preço em R$ mencionado na resposta do agente."""
     matches = re.findall(r"R\$\s?([\d.,]+)", text)
     if not matches:
         return None
@@ -642,15 +767,15 @@ def _extract_price_from_text(text: str) -> float | None:
 
 
 def negotiate(state: NegotiatorState) -> dict:
-    """Core LLM negotiation node with tool calling."""
+    """Nó principal de negociação via LLM com chamada de tools."""
     context = _build_context(state)
     system = SYSTEM_PROMPT.format(context=context)
 
-    # Build conversation with history for context continuity
+    # Monta conversa com histórico para continuidade de contexto
     conversation = []
     for msg in (state.get("conversation_history") or []):
         conversation.append({"role": msg["role"], "content": msg["content"]})
-    # Append current message if not already the last in history
+    # Adiciona mensagem atual se ainda não for a última no histórico
     if not conversation or conversation[-1]["content"] != state["last_user_message"]:
         conversation.append({"role": "user", "content": state["last_user_message"]})
 
@@ -662,36 +787,55 @@ def negotiate(state: NegotiatorState) -> dict:
     )
     text = append_handoff_suffix(text)
 
-    needs_approval = False
-    if state.get("current_offer_brl") and state.get("suggested_range"):
-        needs_approval = approval_required(
-            state["current_offer_brl"],
-            state["suggested_range"],
-            state.get("benchmarks"),
-        )
-
     result = {
         "messages": [AIMessage(content=text)],
-        "approval_required": needs_approval,
+        "approval_required": False,
         "current_node": "negotiate",
-        "operator_counter_offer_brl": None,  # clear after use
+        "operator_counter_offer_brl": None,  # limpa após uso
     }
 
-    # Track the last price the agent proposed so we know the value in play
+    # Rastreia o último preço proposto pelo agente para saber o valor em jogo
     agent_offer = _extract_price_from_text(text)
     if agent_offer:
         result["last_agent_offer_brl"] = agent_offer
 
-    # If confirm_deal was called, flag the deal as accepted
+    # Se confirm_deal foi chamado, checa aprovação antes de aceitar
     if deal_result.get("accepted"):
-        result["deal_accepted"] = True
-        result["agreed_price_brl"] = deal_result.get("agreed_price_brl")
+        agreed_price = deal_result.get("agreed_price_brl")
+        result["agreed_price_brl"] = agreed_price
+        result["current_offer_brl"] = agreed_price
+
+        needs_approval = False
+        if agreed_price and state.get("suggested_range"):
+            needs_approval = approval_required(
+                agreed_price,
+                state["suggested_range"],
+                state.get("benchmarks"),
+            )
+
+        if needs_approval:
+            result["approval_required"] = True
+            result["deal_accepted"] = False
+        else:
+            result["deal_accepted"] = True
+    else:
+        # Se acabamos de apresentar contraproposta do operador, limpa a oferta
+        # antiga do influenciador para não re-disparar aprovação em loop infinito.
+        if state.get("operator_counter_offer_brl"):
+            result["current_offer_brl"] = None
+        elif state.get("current_offer_brl") and state.get("suggested_range"):
+            # Sem deal confirmado — checa aprovação na oferta atual se existir
+            result["approval_required"] = approval_required(
+                state["current_offer_brl"],
+                state["suggested_range"],
+                state.get("benchmarks"),
+            )
 
     return result
 
 
 def approval_node(state: NegotiatorState) -> dict:
-    """Interrupt for human approval."""
+    """Interrupção para aprovação humana."""
     decision = interrupt(
         {
             "type": "approval_required",
@@ -709,7 +853,7 @@ def approval_node(state: NegotiatorState) -> dict:
         counter = None
 
     if counter:
-        # Update ceiling to operator's counter-offer so the agent can propose it
+        # Atualiza ceiling para a contraproposta do operador para o agente poder propor
         updated_range = dict(state.get("suggested_range") or {})
         updated_range["ceiling"] = counter
         return {
@@ -752,20 +896,68 @@ DEAL_CLOSING_MESSAGE = (
 
 
 def save_deal_node(state: NegotiatorState) -> dict:
-    """Build deal summary for the orchestrator to persist."""
+    """Monta resumo do deal para o orchestrator persistir.
+
+    Multi-plataforma: divide agreed_price proporcionalmente por (avg_views * qty)
+    de cada plataforma e cria um dict de deal por plataforma.
+    """
+    platform_details = state.get("platform_details")
+    agreed_price = state.get("agreed_price_brl", 0.0)
+    influencer_name = state.get("name", "")
+    influencer_phone = state.get("influencer_phone", "")
+    niche = state.get("niche", "")
+    deliverable_type = state.get("deliverable_type", "reel")
+
+    if platform_details and len(platform_details) > 1:
+        # Multi-plataforma: divide preço proporcionalmente
+        weights = {}
+        total_weight = 0.0
+        for plat, details in platform_details.items():
+            w = (details.get("avg_views") or 0) * (details.get("qty") or 1)
+            weights[plat] = w
+            total_weight += w
+
+        deals = []
+        for plat, details in platform_details.items():
+            p_qty = details.get("qty") or state.get("qty", 1)
+            p_views = details.get("avg_views") or state.get("avg_views", 0)
+            proportion = weights[plat] / total_weight if total_weight else 1.0 / len(platform_details)
+            p_price = round(agreed_price * proportion, 2)
+            p_cpm = (p_price / (p_views / 1000 * p_qty)) if p_views and p_qty else 0.0
+
+            deals.append({
+                "influencer_name": influencer_name,
+                "influencer_phone": influencer_phone,
+                "platform": plat,
+                "niche": niche,
+                "deliverable_type": deliverable_type,
+                "qty": p_qty,
+                "avg_views": p_views,
+                "final_price_brl": p_price,
+                "cpm_brl": round(p_cpm, 2),
+            })
+
+        name = state.get("name") or "você"
+        closing_text = DEAL_CLOSING_MESSAGE.format(name=name)
+        return {
+            "deal_to_save": deals,
+            "current_node": "save_deal",
+            "messages": [AIMessage(content=closing_text)],
+        }
+
+    # Plataforma única
     platform_raw = state.get("platform", "instagram")
     first_platform = platform_raw.split(",")[0] if platform_raw else "instagram"
     avg_views = state.get("avg_views", 0)
-    agreed_price = state.get("agreed_price_brl", 0.0)
     qty = state.get("qty", 1)
-
     cpm = (agreed_price / (avg_views / 1000 * qty)) if avg_views and qty else 0.0
 
     deal = {
-        "influencer_name": state.get("name", ""),
+        "influencer_name": influencer_name,
+        "influencer_phone": influencer_phone,
         "platform": first_platform,
-        "niche": state.get("niche", ""),
-        "deliverable_type": state.get("deliverable_type", "reel"),
+        "niche": niche,
+        "deliverable_type": deliverable_type,
         "qty": qty,
         "avg_views": avg_views,
         "final_price_brl": agreed_price,
@@ -774,7 +966,6 @@ def save_deal_node(state: NegotiatorState) -> dict:
 
     name = state.get("name") or "você"
     closing_text = DEAL_CLOSING_MESSAGE.format(name=name)
-
     return {
         "deal_to_save": deal,
         "current_node": "save_deal",
@@ -783,7 +974,7 @@ def save_deal_node(state: NegotiatorState) -> dict:
 
 
 def close_node(state: NegotiatorState) -> dict:
-    """Generate deal summary and close conversation."""
+    """Gera resumo do deal e encerra a conversa."""
     summary = {
         "thread_id": state["thread_id"],
         "platform": state.get("platform"),
@@ -807,16 +998,16 @@ def close_node(state: NegotiatorState) -> dict:
     }
 
 
-# ── Conditional edges ────────────────────────────────────────────
+# ── Arestas condicionais ─────────────────────────────────────────
 
 
 def after_qualify(state: NegotiatorState) -> str:
     if state.get("owner") == "human":
         return "close"
     if not state.get("qualification_complete"):
-        return END  # wait for user reply
+        return END  # aguarda resposta do usuário
     if state.get("suggested_range"):
-        return "negotiate"  # re-entry optimization
+        return "negotiate"  # otimização de re-entrada
     return "retrieve_benchmarks"
 
 
@@ -827,7 +1018,7 @@ def after_negotiate(state: NegotiatorState) -> str:
         return "save_deal"
     if state.get("approval_required"):
         return "approval"
-    return END  # wait for user reply
+    return END  # aguarda resposta do usuário
 
 
 def after_approval(state: NegotiatorState) -> str:
@@ -836,11 +1027,11 @@ def after_approval(state: NegotiatorState) -> str:
     return "negotiate"
 
 
-# ── Build graph ──────────────────────────────────────────────────
+# ── Montagem do grafo ────────────────────────────────────────────
 
 
 def build_graph(checkpointer=None):
-    """Build and compile the negotiator LangGraph."""
+    """Monta e compila o grafo LangGraph do negociador."""
     graph = StateGraph(NegotiatorState)
 
     graph.add_node("qualify", qualify)

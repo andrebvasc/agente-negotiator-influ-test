@@ -1,4 +1,4 @@
-"""Orchestrator: bridge between CLI and LangGraph."""
+"""Orquestrador: ponte entre CLI e LangGraph."""
 
 import os
 from pathlib import Path
@@ -36,7 +36,7 @@ CHECKPOINT_DB = os.getenv("CHECKPOINT_DB", "data/checkpoints.sqlite")
 
 
 class Orchestrator:
-    """Manages conversation lifecycle between CLI and LangGraph."""
+    """Gerencia o ciclo de vida das conversas entre CLI e LangGraph."""
 
     def __init__(self, agent_id: str = "negotiator"):
         init_db()
@@ -58,7 +58,7 @@ class Orchestrator:
     def start_or_resume_conversation(
         self, influencer_phone: str, new: bool = False
     ) -> dict:
-        """Start a new or resume existing conversation."""
+        """Inicia uma nova conversa ou retoma uma existente."""
         influencer = get_or_create_influencer(self.db_session, influencer_phone)
         self.db_session.commit()
 
@@ -90,11 +90,11 @@ class Orchestrator:
         user_message: str | None = None,
         influencer_name: str | None = None,
     ) -> str:
-        """Generate and persist the opening greeting for a new conversation.
+        """Gera e persiste a saudação inicial para uma nova conversa.
 
-        If the influencer already has a name on file the greeting skips
-        self-introduction.  If *user_message* is provided the greeting is
-        adapted to respond to it.
+        Se o influenciador já tem nome cadastrado, a saudação pula a
+        auto-apresentação. Se *user_message* é fornecido, a saudação é
+        adaptada para respondê-lo.
         """
         greeting = generate_greeting(
             user_message=user_message,
@@ -107,11 +107,11 @@ class Orchestrator:
     def _process_post_deal(
         self, conversation_id: int, user_message: str, influencer_id: int | None
     ) -> dict:
-        """Handle messages after a deal is closed — collect personal info."""
+        """Trata mensagens após fechamento de deal — coleta dados pessoais."""
         save_message(self.db_session, conversation_id, "user", user_message)
         self.db_session.commit()
 
-        # Load already-known personal fields from the influencer
+        # Carrega campos pessoais já conhecidos do influenciador
         from app.db.models import Influencer
 
         known = {}
@@ -124,16 +124,16 @@ class Orchestrator:
                     if val:
                         known[f] = val
 
-        # Extract new personal data from message
+        # Extrai novos dados pessoais da mensagem
         extracted = extract_personal_info(user_message, known)
 
-        # Merge extracted into influencer record
+        # Faz merge dos dados extraídos no registro do influenciador
         if extracted and influencer_id:
             update_influencer_profile(self.db_session, influencer_id, **extracted)
             self.db_session.commit()
             known.update({k: v for k, v in extracted.items() if v})
 
-        # Check what's still missing
+        # Checa o que ainda falta
         missing = [f for f in PERSONAL_INFO_FIELDS if not known.get(f)]
 
         influencer_name = inf.name if inf else None
@@ -141,7 +141,7 @@ class Orchestrator:
             user_message, known, missing, influencer_name
         )
 
-        # If all info collected, mark conversation as fully complete
+        # Se todos os dados foram coletados, marca conversa como completa
         if not missing:
             from app.core.store import update_conversation_status
 
@@ -164,8 +164,8 @@ class Orchestrator:
         user_message: str,
         influencer_id: int | None = None,
     ) -> dict:
-        """Process a user message through the graph."""
-        # Post-deal phase: collect personal info instead of running the graph
+        """Processa uma mensagem do usuário pelo grafo."""
+        # Fase pós-deal: coleta dados pessoais ao invés de rodar o grafo
         from app.db.models import Conversation
 
         conv = self.db_session.query(Conversation).get(conversation_id)
@@ -211,7 +211,7 @@ class Orchestrator:
 
         history = get_conversation_messages(self.db_session, conversation_id, limit=20)
 
-        # Load existing influencer profile to pre-populate known fields
+        # Carrega perfil existente do influenciador para pré-popular campos conhecidos
         influencer_profile = {}
         if influencer_id:
             from app.db.models import Influencer
@@ -222,9 +222,17 @@ class Orchestrator:
                     if val:
                         influencer_profile[field] = val
 
+        # Resolve telefone do influenciador a partir do registro
+        _inf_phone = ""
+        if influencer_id:
+            from app.db.models import Influencer as _Inf
+            _inf_obj = self.db_session.query(_Inf).get(influencer_id)
+            if _inf_obj:
+                _inf_phone = _inf_obj.phone or ""
+
         input_state = {
             "thread_id": thread_id,
-            "influencer_phone": "",
+            "influencer_phone": _inf_phone,
             "agent_id": self.agent_config.agent_id,
             "last_user_message": user_message,
             "owner": "agent",
@@ -240,20 +248,24 @@ class Orchestrator:
 
         result = self.graph.invoke(input_state, config)
 
-        # Persist influencer profile updates extracted during qualification
+        # Persiste atualizações do perfil extraídas durante qualificação
         if result.get("influencer_updates") and influencer_id:
             update_influencer_profile(
                 self.db_session, influencer_id, **result["influencer_updates"]
             )
             self.db_session.commit()
 
-        # Persist deal if the influencer accepted
+        # Persiste deal(s) se o influenciador aceitou
         if result.get("deal_to_save"):
-            save_deal(self.db_session, result["deal_to_save"])
+            deals = result["deal_to_save"]
+            if isinstance(deals, dict):
+                deals = [deals]
+            for deal_data in deals:
+                save_deal(self.db_session, deal_data)
             update_conversation_status(self.db_session, conversation_id, "closed_deal")
             self.db_session.commit()
 
-        # Extract response from messages
+        # Extrai resposta das mensagens
         response = ""
         if result.get("messages"):
             for msg in reversed(result["messages"]):
@@ -276,15 +288,19 @@ class Orchestrator:
     def handle_approval(
         self, thread_id: str, decision: dict, conversation_id: int | None = None
     ) -> dict:
-        """Resume graph after approval interrupt."""
+        """Retoma o grafo após interrupção de aprovação."""
         from langgraph.types import Command
 
         config = {"configurable": {"thread_id": thread_id}}
         result = self.graph.invoke(Command(resume=decision), config)
 
-        # Persist deal if approval led to deal closure
+        # Persiste deal(s) se aprovação levou ao fechamento
         if result.get("deal_to_save") and conversation_id:
-            save_deal(self.db_session, result["deal_to_save"])
+            deals = result["deal_to_save"]
+            if isinstance(deals, dict):
+                deals = [deals]
+            for deal_data in deals:
+                save_deal(self.db_session, deal_data)
             update_conversation_status(self.db_session, conversation_id, "closed_deal")
             self.db_session.commit()
 
@@ -306,6 +322,6 @@ class Orchestrator:
         }
 
     def close(self):
-        """Cleanup resources."""
+        """Libera recursos."""
         self.db_session.close()
         self._checkpointer_ctx.__exit__(None, None, None)

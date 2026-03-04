@@ -1,4 +1,4 @@
-"""CLI interface using Typer + Rich."""
+"""Interface CLI usando Typer + Rich."""
 
 import typer
 from rich.console import Console

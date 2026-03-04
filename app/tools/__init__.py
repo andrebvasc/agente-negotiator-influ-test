@@ -1,4 +1,4 @@
-"""OpenAI function-calling tool schemas."""
+"""Schemas de tools para function-calling da OpenAI."""
 
 OPENAI_TOOL_SCHEMAS = [
     {

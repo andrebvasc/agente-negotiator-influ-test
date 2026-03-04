@@ -1,4 +1,4 @@
-"""CRUD operations for business data."""
+"""Operações CRUD para dados de negócio."""
 
 import uuid
 
@@ -10,7 +10,7 @@ from app.db.models import Agent, Conversation, Deal, Influencer, Message, Offer
 def get_conversation_messages(
     session: Session, conversation_id: int, limit: int = 20
 ) -> list[dict]:
-    """Return the last N messages of a conversation as dicts."""
+    """Retorna as últimas N mensagens de uma conversa como dicts."""
     msgs = (
         session.query(Message)
         .filter_by(conversation_id=conversation_id)
@@ -22,10 +22,10 @@ def get_conversation_messages(
 
 
 def update_influencer_profile(session: Session, influencer_id: int, **kwargs) -> None:
-    """Update influencer fields that are still NULL (never overwrite existing data).
+    """Atualiza campos do influenciador que ainda são NULL (nunca sobrescreve dados existentes).
 
-    Special handling for ``platform``: merges new values with existing ones
-    (comma-separated set).
+    Tratamento especial para ``platform``: faz merge dos novos valores com os existentes
+    (set separado por vírgula).
     """
     influencer = session.query(Influencer).get(influencer_id)
     if not influencer:
@@ -133,9 +133,10 @@ def update_conversation_owner(
 
 
 def save_deal(session: Session, deal_data: dict) -> Deal:
-    """Create a Deal record from the deal_to_save dict."""
+    """Cria um registro Deal a partir do dict deal_to_save."""
     deal = Deal(
         influencer_name=deal_data.get("influencer_name", ""),
+        influencer_phone=deal_data.get("influencer_phone"),
         platform=deal_data.get("platform", ""),
         niche=deal_data.get("niche", ""),
         deliverable_type=deal_data.get("deliverable_type", ""),

@@ -1,4 +1,4 @@
-"""Entry point: python -m app."""
+"""Ponto de entrada: python -m app."""
 
 from app.cli import app
 

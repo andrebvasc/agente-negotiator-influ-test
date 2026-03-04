@@ -1,4 +1,4 @@
-"""Seed database with 20 realistic deals."""
+"""Popula banco com 20 deals realistas."""
 
 from datetime import datetime, timedelta, timezone
 

@@ -1,4 +1,4 @@
-"""Engine + session factory."""
+"""Engine + fábrica de sessões."""
 
 import os
 from pathlib import Path

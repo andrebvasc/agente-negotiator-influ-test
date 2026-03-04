@@ -1,4 +1,4 @@
-"""Pricing tools: calculate price ranges and check approval requirements."""
+"""Tools de precificação: calcula faixas de preço e checa requisitos de aprovação."""
 
 
 def calculate_price_range(
@@ -7,10 +7,10 @@ def calculate_price_range(
     target_cpm_brl: float,
     benchmarks: dict | None = None,
 ) -> dict:
-    """Calculate floor/target/ceiling price range.
+    """Calcula faixa de preço floor/target/ceiling.
 
-    Uses effective_cpm = max(target_cpm, benchmark_avg_cpm) when benchmarks available.
-    Floor = 70% of target, Ceiling = 130% of target.
+    Usa effective_cpm = max(target_cpm, benchmark_avg_cpm) quando benchmarks disponíveis.
+    Floor = 70% do target, Ceiling = 130% do target.
     """
     effective_cpm = target_cpm_brl
 
@@ -31,11 +31,11 @@ def approval_required(
     price_range: dict,
     benchmarks: dict | None = None,
 ) -> bool:
-    """Check if the proposed price requires human approval.
+    """Checa se o preço proposto requer aprovação humana.
 
-    Returns True if:
-    - proposed price is below floor or above ceiling
-    - no benchmarks available (count == 0)
+    Retorna True se:
+    - preço proposto está abaixo do floor ou acima do ceiling
+    - sem benchmarks disponíveis (count == 0)
     """
     if not benchmarks or benchmarks.get("count", 0) == 0:
         return True

@@ -1,4 +1,4 @@
-"""SQLAlchemy 2.0 declarative models."""
+"""Modelos declarativos SQLAlchemy 2.0."""
 
 from datetime import datetime, timezone
 
@@ -94,6 +94,7 @@ class Deal(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     influencer_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    influencer_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
     platform: Mapped[str] = mapped_column(String(32), nullable=False)
     niche: Mapped[str] = mapped_column(String(64), nullable=False)
     deliverable_type: Mapped[str] = mapped_column(String(32), nullable=False)
