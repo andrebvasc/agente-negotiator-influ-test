@@ -557,7 +557,13 @@ def qualify(state: NegotiatorState) -> dict:
     }
     for ext_key, state_key in field_mapping.items():
         if extracted.get(ext_key) and not state.get(state_key):
-            updates[state_key] = extracted[ext_key]
+            value = extracted[ext_key]
+            # Sanidade: qty > 100 provavelmente é preço, não quantidade de peças
+            if ext_key == "qty" and isinstance(value, (int, float)) and value > 100:
+                if not extracted.get("proposed_price_brl"):
+                    extracted["proposed_price_brl"] = value
+                continue
+            updates[state_key] = value
 
     # Plataforma: merge como set separado por vírgula
     if extracted.get("platform"):
@@ -635,10 +641,13 @@ def qualify(state: NegotiatorState) -> dict:
                 f"O influenciador disse: '{state['last_user_message']}'\n\n"
                 f"Dados já confirmados: {json.dumps(known_now, ensure_ascii=False)}\n"
                 f"Campos ainda faltando: {missing_str}.\n\n"
-                "Se o influenciador fez uma pergunta (como perguntar seu nome ou dados), "
-                "responda usando os dados confirmados acima ANTES de pedir o que falta. "
-                "Confirme os dados coletados de forma breve e natural, "
-                "depois pergunte APENAS o que falta. Seja conciso e cordial."
+                "REGRAS OBRIGATÓRIAS:\n"
+                "1. NUNCA pergunte algo que já está nos dados confirmados acima. "
+                "Se 'name' já existe, NÃO peça o nome novamente.\n"
+                "2. Pergunte APENAS os campos que estão na lista 'faltando'.\n"
+                "3. Se o influenciador fez uma pergunta, responda ANTES de pedir o que falta.\n"
+                "4. Confirme os dados coletados de forma breve e natural.\n"
+                "5. Seja conciso e cordial."
             ),
         }
     )
@@ -766,8 +775,35 @@ def _extract_price_from_text(text: str) -> float | None:
         return None
 
 
+def _extract_user_price(message: str) -> float | None:
+    """Extrai preço proposto pelo influenciador da mensagem.
+
+    Tenta R$ com valor, ou número puro se a mensagem é basicamente só um número.
+    """
+    # Primeiro tenta formato R$
+    price = _extract_price_from_text(message)
+    if price:
+        return price
+    # Se a mensagem é basicamente um número (ex: "50000", "5.000", "10000,00")
+    stripped = message.strip()
+    match = re.match(r"^(\d[\d.,]*)\s*(?:reais|mil|k)?$", stripped, re.IGNORECASE)
+    if match:
+        raw = match.group(1).replace(".", "").replace(",", ".")
+        try:
+            val = float(raw)
+            # Só considera como preço se > 100 (evita confundir com qty)
+            if val > 100:
+                return val
+        except ValueError:
+            pass
+    return None
+
+
 def negotiate(state: NegotiatorState) -> dict:
     """Nó principal de negociação via LLM com chamada de tools."""
+    # Extrai preço proposto pelo influenciador na mensagem atual
+    user_price = _extract_user_price(state["last_user_message"])
+
     context = _build_context(state)
     system = SYSTEM_PROMPT.format(context=context)
 
@@ -823,13 +859,17 @@ def negotiate(state: NegotiatorState) -> dict:
         # antiga do influenciador para não re-disparar aprovação em loop infinito.
         if state.get("operator_counter_offer_brl"):
             result["current_offer_brl"] = None
-        elif state.get("current_offer_brl") and state.get("suggested_range"):
-            # Sem deal confirmado — checa aprovação na oferta atual se existir
-            result["approval_required"] = approval_required(
-                state["current_offer_brl"],
-                state["suggested_range"],
-                state.get("benchmarks"),
-            )
+        else:
+            # Atualiza current_offer_brl se o influenciador propôs um preço nesta mensagem
+            effective_offer = user_price or state.get("current_offer_brl")
+            if user_price:
+                result["current_offer_brl"] = user_price
+            if effective_offer and state.get("suggested_range"):
+                result["approval_required"] = approval_required(
+                    effective_offer,
+                    state["suggested_range"],
+                    state.get("benchmarks"),
+                )
 
     return result
 
